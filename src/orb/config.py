@@ -38,3 +38,14 @@ class ORBConfig:
     slippage_bps_entry: float = 2.0            # breakout entries chase
     slippage_bps_stop: float = 5.0             # stop-outs fill worst
     commission_per_share: float = 0.0
+
+    # --- day-eligibility filters (OPT-IN; off by default) ---
+    # These gate which sessions are tradeable. They are intentionally OFF so the
+    # default backtest measures plain ORB. Their thresholds are unvalidated magic
+    # numbers — turn on and tune ONLY against out-of-sample data (see SPEC.md
+    # overfitting note). See docs/ORB_RULES.md "Known failure modes".
+    use_gap_filter: bool = False               # skip large overnight gaps
+    max_gap_pct: float = 0.005                 # |open-prev_close|/prev_close ≤ 0.5%
+    use_or_width_filter: bool = False          # skip days whose OR is already wide
+    max_or_width_atr: float = 0.30             # OR width ≤ 30% of prior-day ATR
+    atr_period: int = 14                       # ATR lookback (prior days only)

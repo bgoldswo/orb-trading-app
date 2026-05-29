@@ -46,6 +46,20 @@ Regular trading hours, 09:30–16:00 ET. All logic uses exchange-local time.
 - **Gap-through-open days** where the opening auction blows past levels.
 - **Overfitting** N and the R-multiple to a single historical sample.
 
+## Optional day filters (opt-in; off by default)
+Two configurable session filters target the failure modes above. They are **off
+by default** — the baseline must measure plain ORB first, and their thresholds
+are magic numbers to be validated out-of-sample, not trusted on sight.
+- **Gap filter** (`use_gap_filter`, `max_gap_pct`, default 0.5%): skip days whose
+  RTH open gaps too far from the prior RTH close — targets *gap-through-open*.
+- **OR-width / ATR filter** (`use_or_width_filter`, `max_or_width_atr`, default
+  30%; `atr_period`, default 14): skip days whose opening range already spans too
+  much of the prior-day (true-range) ATR — targets *exhausted-move* / regime risk.
+
+Both are look-ahead-safe (ATR uses prior days only) and **fail-closed**: if the
+context an enabled filter needs is missing, the day is not traded. See
+`src/orb/filters.py`.
+
 ## Literature (treat as a pointer, not a target)
 ORB is a conventional intraday construction. An often-cited study
 (Zarattini & Aziz, 2023) examined a 5-minute ORB on QQQ. Treat any specific

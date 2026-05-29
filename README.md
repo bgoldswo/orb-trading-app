@@ -26,17 +26,50 @@ pytest -q
 ```
 src/orb/
   config.py     # parameter surface (defaults live here) — implemented
-  data.py       # intraday OHLCV loading — Phase 2 stub
-  strategy.py   # ORB signal logic — Phase 2 stub (look-ahead contract documented)
-  backtest.py   # backtest engine — Phase 2 stub
-  metrics.py    # performance metrics — Phase 2 stub
+  data.py       # intraday OHLCV loading (Alpaca + local cache) — implemented
+  strategy.py   # ORB signal logic (look-ahead-safe) — implemented
+  backtest.py   # backtest engine (cost model, stop/target) — implemented
+  metrics.py    # performance metrics — implemented
 docs/SPEC.md       # specification + acceptance criteria
 docs/ORB_RULES.md  # precise strategy definition + failure modes
+docs/RESULTS.md    # backtest findings log (incl. Phase 2 baseline)
+scripts/baseline.py # reproducible vanilla-vs-filters A/B run
 ```
+
+## Running a backtest
+```python
+from orb.config import ORBConfig
+from orb.data import load_intraday
+from orb.backtest import run_backtest
+from orb.metrics import performance_summary
+
+cfg = ORBConfig()                         # defaults; override any field
+bars = {s: load_intraday(s, "2023-01-01", "2024-12-31", cfg.bar_minutes)
+        for s in cfg.symbols}             # first fetch hits Alpaca, then cached
+trade_log, equity_curve = run_backtest(bars, cfg)
+print(performance_summary(trade_log, equity_curve))
+```
+`load_intraday` needs `ALPACA_API_KEY` / `ALPACA_API_SECRET` in `.env` on the
+first fetch; results cache to `data/cache/` (git-ignored) so reruns are offline
+and deterministic. The engine itself needs no network — see `tests/` for
+fully synthetic, hermetic coverage.
+
+### Optional day filters (off by default)
+Two opt-in session filters can gate which days ORB trades — a **gap filter**
+(skip large overnight gaps) and an **OR-width/ATR filter** (skip days whose
+opening range is already wide). They are **off by default** so the baseline
+measures plain ORB; their thresholds are unvalidated and should be tuned only
+against out-of-sample data. Enable per run, e.g.:
+```python
+cfg = ORBConfig(use_gap_filter=True, use_or_width_filter=True)
+```
+See `src/orb/filters.py` (look-ahead-safe; fail-closed when context is missing).
 
 ## Phase status
 - [x] **Phase 1 — Discovery:** spec, precise ORB rules, scaffold, CI.
-- [ ] Phase 2 — Backtesting core
+- [x] **Phase 2 — Backtesting core:** look-ahead-safe ORB engine with cost model,
+  deterministic day-by-day simulation, metrics, Alpaca loader; tests cover OR
+  computation, entry timing, and stop/target resolution.
 - [ ] Phase 3 — Dashboard UI
 - [ ] Phase 4 — Paper-trading signals
 - [ ] Phase 5 — (gated) Live execution
