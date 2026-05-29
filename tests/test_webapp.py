@@ -12,8 +12,10 @@ import pytest
 
 pytest.importorskip("streamlit")
 
+from orb.backtest import run_backtest
 from orb.config import ORBConfig
-from orb.webapp import _build_config
+from orb.webapp import _build_config, _equity_drawdown_fig, _exit_fig, _style_trade_log
+from synthetic import flat_day, set_bar, set_opening_range
 
 
 def _form(**overrides):
@@ -74,3 +76,25 @@ def test_build_config_threads_overrides_through():
     assert cfg.use_gap_filter and cfg.max_gap_pct == 0.01
     assert cfg.use_or_width_filter and cfg.max_or_width_atr == 0.5
     assert cfg.atr_period == 20
+
+
+def _sample_result():
+    """A one-trade backtest so the render helpers get realistic shapes."""
+    d = "2024-03-04"
+    df = flat_day(d, 100.0)
+    set_opening_range(df, d, 100.0, 99.0)
+    set_bar(df, d, "09:45", c=100.5)
+    set_bar(df, d, "09:46", o=100.5)
+    set_bar(df, d, "09:50", h=104.0)  # hits the 2R target
+    return run_backtest({"SPY": df}, ORBConfig())
+
+
+def test_chart_and_table_builders_run_without_error():
+    trade_log, equity_curve = _sample_result()
+    assert not trade_log.empty
+    # Figures build (Plotly) — would raise on a bad trace/axis spec.
+    assert _equity_drawdown_fig(equity_curve).data
+    assert _exit_fig(trade_log).data
+    # Styler renders fully (catches format/column-name drift).
+    html = _style_trade_log(trade_log).to_html()
+    assert "P&L" in html and "Symbol" in html
