@@ -30,6 +30,8 @@ src/orb/
   strategy.py   # ORB signal logic (look-ahead-safe) — implemented
   backtest.py   # backtest engine (cost model, stop/target) — implemented
   metrics.py    # performance metrics — implemented
+  webapp.py     # Streamlit dashboard (Phase 3) — implemented
+streamlit_app.py   # dashboard entry point (`streamlit run streamlit_app.py`)
 docs/SPEC.md       # specification + acceptance criteria
 docs/ORB_RULES.md  # precise strategy definition + failure modes
 docs/RESULTS.md    # backtest findings log (incl. Phase 2 baseline)
@@ -65,12 +67,25 @@ cfg = ORBConfig(use_gap_filter=True, use_or_width_filter=True)
 ```
 See `src/orb/filters.py` (look-ahead-safe; fail-closed when context is missing).
 
+## Dashboard (Phase 3)
+A Streamlit app wraps the engine — configure parameters, run a backtest, and view
+the equity curve, headline metrics, exit-reason breakdown, and the trade log
+(with CSV download).
+```bash
+pip install -e ".[ui]"
+streamlit run streamlit_app.py
+```
+Data loads via the same Alpaca-backed `load_intraday` (needs `.env` keys on first
+fetch, then served from `data/cache/`). The dashboard places **no orders** — it's
+a research tool, not financial advice.
+
 ## Phase status
 - [x] **Phase 1 — Discovery:** spec, precise ORB rules, scaffold, CI.
 - [x] **Phase 2 — Backtesting core:** look-ahead-safe ORB engine with cost model,
   deterministic day-by-day simulation, metrics, Alpaca loader; tests cover OR
   computation, entry timing, and stop/target resolution.
-- [ ] Phase 3 — Dashboard UI
+- [x] **Phase 3 — Dashboard UI:** Streamlit app to configure params, run a
+  backtest, and view the equity curve, metrics, exit breakdown, and trade log.
 - [ ] Phase 4 — Paper-trading signals
 - [ ] Phase 5 — (gated) Live execution
 

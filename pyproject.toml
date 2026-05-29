@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orb-trading-app"
-version = "0.1.0"
+version = "0.2.0"
 description = "Opening Range Breakout backtesting and paper-trading signal app (US equities)."
 requires-python = ">=3.11"
 dependencies = [
@@ -14,6 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+ui = ["streamlit>=1.30"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
