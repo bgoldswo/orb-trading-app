@@ -1,9 +1,17 @@
-"""Entry point for the ORB backtester dashboard.
+"""Entry point for the ORB app (multipage: Backtest + Paper signals).
 
 Run with:  streamlit run streamlit_app.py
 Requires the UI extra:  pip install -e ".[ui]"
 """
 
-from orb.webapp import main
+import streamlit as st
 
-main()
+from orb.webapp import backtest_page, signals_page
+
+st.set_page_config(page_title="ORB Backtester", page_icon="📈", layout="wide")
+
+pages = [
+    st.Page(backtest_page, title="Backtest", icon="📈", default=True),
+    st.Page(signals_page, title="Paper signals", icon="📡"),
+]
+st.navigation(pages).run()
