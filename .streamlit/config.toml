@@ -1,0 +1,9 @@
+# Dashboard theme. Tweak colors here — no code changes needed.
+# Switch base to "dark" for a dark theme.
+[theme]
+base = "light"
+primaryColor = "#2563eb"            # accent (buttons, highlights)
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f1f5f9"  # sidebar / cards
+textColor = "#0f172a"
+font = "sans serif"
