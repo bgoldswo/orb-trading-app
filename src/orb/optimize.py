@@ -23,6 +23,8 @@ from __future__ import annotations
 import dataclasses
 import itertools
 import math
+import os
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -179,6 +181,23 @@ def optimize_window(is_bars: dict, base_cfg, grid: list[dict], objective: str, m
     return best_params, best_score, best_perf
 
 
+def _optimize_fold(payload):
+    """Process-pool worker: optimize one fold's in-sample window.
+    Returns (fold_index, best_params, best_score, is_trades) — small + picklable.
+    The per-fold IS search is independent, so this parallelizes cleanly and
+    deterministically (results are keyed by fold index)."""
+    idx, is_bars, base_cfg, grid, objective, min_trades = payload
+    best, score, perf = optimize_window(is_bars, base_cfg, grid, objective, min_trades)
+    return idx, best, score, (perf.num_trades if perf is not None else 0)
+
+
+def _resolve_workers(workers: int | None, n_folds: int) -> int:
+    """How many processes to use: capped at fold count and available cores."""
+    if workers is None:
+        return max(1, min(os.cpu_count() or 1, n_folds))
+    return max(1, min(workers, n_folds))
+
+
 def walk_forward(
     bars_by_symbol: dict[str, pd.DataFrame],
     base_cfg: ORBConfig | None = None,
@@ -189,12 +208,17 @@ def walk_forward(
     step_days: int | None = None,
     objective: str = "avg_r",
     min_trades: int = 10,
+    workers: int | None = None,
 ) -> WalkForwardResult:
     """Run walk-forward optimization and return per-fold + stitched OOS results.
 
-    Deterministic: identical inputs produce identical outputs. OOS equity
-    compounds across folds (each fold starts from the prior fold's ending equity),
-    so the stitched curve reads like one continuous account.
+    Deterministic: identical inputs produce identical outputs regardless of
+    ``workers``. The heavy in-sample search runs per-fold (optionally across
+    processes); the out-of-sample pass is sequential so equity compounds across
+    folds (each starts from the prior fold's ending equity).
+
+    ``workers``: process count for the in-sample search. None = auto (cores capped
+    at fold count); 1 = serial (no process pool).
     """
     base_cfg = base_cfg or ORBConfig()
     space = space or DEFAULT_SEARCH_SPACE
@@ -204,6 +228,29 @@ def walk_forward(
     if data_start is None:
         raise ValueError("no data to optimize over")
 
+    # Pre-slice each fold's in-sample bars (in the main process); drop empties.
+    windows = make_folds(data_start, data_end, is_days, oos_days, step_days)
+    valid = []
+    for idx, (is_s, is_e, oos_s, oos_e) in enumerate(windows):
+        is_bars = _slice(bars_by_symbol, _ts(is_s), _ts(is_e))
+        if is_bars:
+            valid.append((idx, is_s, is_e, oos_s, oos_e, is_bars))
+
+    # --- Phase A: per-fold in-sample optimization (parallelizable) ---
+    n_workers = _resolve_workers(workers, len(valid))
+    best_by_idx: dict[int, tuple] = {}
+    if n_workers > 1 and len(valid) > 1:
+        payloads = [(idx, isb, base_cfg, grid, objective, min_trades)
+                    for idx, _, _, _, _, isb in valid]
+        with ProcessPoolExecutor(max_workers=n_workers) as ex:
+            for idx, best, score, is_trades in ex.map(_optimize_fold, payloads):
+                best_by_idx[idx] = (best, score, is_trades)
+    else:
+        for idx, _, _, _, _, isb in valid:
+            best, score, perf = optimize_window(isb, base_cfg, grid, objective, min_trades)
+            best_by_idx[idx] = (best, score, perf.num_trades if perf is not None else 0)
+
+    # --- Phase B: sequential out-of-sample evaluation, compounding equity ---
     running = float(base_cfg.starting_equity)
     folds: list[Fold] = []
     oos_logs: list[pd.DataFrame] = []
@@ -211,11 +258,8 @@ def walk_forward(
     curve_vals: list[float] = []
     first_oos_date: date | None = None
 
-    for is_s, is_e, oos_s, oos_e in make_folds(data_start, data_end, is_days, oos_days, step_days):
-        is_bars = _slice(bars_by_symbol, _ts(is_s), _ts(is_e))
-        if not is_bars:
-            continue
-        best, is_score, is_perf = optimize_window(is_bars, base_cfg, grid, objective, min_trades)
+    for idx, is_s, is_e, oos_s, oos_e, _ in valid:
+        best, is_score, is_trades = best_by_idx[idx]
         if best is None:
             continue
 
@@ -239,7 +283,7 @@ def walk_forward(
                 oos_start=oos_s.isoformat(), oos_end=oos_e.isoformat(),
                 best_params=best,
                 is_objective=round(is_score, 4),
-                is_trades=is_perf.num_trades,
+                is_trades=is_trades,
                 oos_objective=round(_metric(oos_perf, objective), 4) if oos_perf.num_trades else float("nan"),
                 oos_trades=oos_perf.num_trades,
                 oos_return=round(oos_perf.total_return, 6),
