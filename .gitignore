@@ -1,0 +1,43 @@
+# Secrets — never commit
+.env
+*.key
+*.pem
+secrets/
+
+# Market data — not committed
+data/
+*.csv
+*.parquet
+*.feather
+*.h5
+
+# Backtest / run outputs
+outputs/
+results/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json
