@@ -119,19 +119,30 @@ via **Telegram** (optional). To enable alerts:
 Alerts are optional and fail-safe: if Telegram isn't configured, scanning still
 logs signals normally. Nothing here places an order.
 
-### Live intraday monitor (real-time-ish alerts)
+### Live intraday monitor (real-time alerts)
 Run during market hours to get alerted the moment an ORB breakout fires — not
 after the close. It watches your symbols, detects the day's signal as it forms,
 and Telegram-alerts you the Fidelity ticket. **It places no orders** — you trade
-manually.
+manually. Two modes:
 ```bash
+# REST polling (works with just the core install)
 python scripts/live_monitor.py            # cfg.symbols, poll every 60s
 python scripts/live_monitor.py NVDA TSLA --poll 30
-python scripts/live_monitor.py --once     # single pass (testing)
+
+# Real-time websocket stream (free Alpaca IEX feed); needs the [live] extra
+pip install -e ".[live]"
+python scripts/live_monitor.py --stream
 ```
-Data caveat: the **free IEX feed is ~15 min delayed**, so alerts lag ~15 min —
-fine for testing, but real-time entry needs a paid feed (`ALPACA_FEED=sip` with a
-subscription, or Polygon). The loop is feed-agnostic; only the data source changes.
+The `--stream` mode subscribes to Alpaca's **IEX websocket** (free, real-time) and
+re-checks ORB on each completed bar; it first seeds today's bars via REST so the
+opening range isn't missed when starting mid-session.
+
+**Data caveat — free real-time *is* available, with a coverage catch:** Alpaca's
+free IEX feed is real-time (the 15-min delay only applies to the paid SIP feed on
+the free plan). But IEX is a single venue (~2–3% of volume), so its highs/lows can
+miss true extremes — fine for paper/learning, shaky for real trading on a
+stop-sensitive strategy. Set `ALPACA_FEED=sip` (paid) for the full consolidated
+tape; the loop is feed-agnostic.
 
 ## Auto parameter selection — walk-forward optimization (Phase 4.5)
 Let the *machine* choose the parameters, honestly. Naive optimization over all
