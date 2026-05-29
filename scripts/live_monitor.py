@@ -30,19 +30,26 @@ def main(argv=None) -> int:
         pass
     p = argparse.ArgumentParser(description="Live intraday ORB monitor (no orders).")
     p.add_argument("symbols", nargs="*", help="Symbols (default: ORBConfig.symbols).")
-    p.add_argument("--poll", type=int, default=60, help="Seconds between polls.")
-    p.add_argument("--once", action="store_true", help="Single pass then exit (testing).")
+    p.add_argument("--poll", type=int, default=60, help="Seconds between polls (REST mode).")
+    p.add_argument("--once", action="store_true", help="Single REST pass then exit (testing).")
+    p.add_argument("--stream", action="store_true",
+                   help="Use the real-time Alpaca websocket feed instead of REST polling.")
     a = p.parse_args(argv if argv is not None else sys.argv[1:])
 
     cfg = ORBConfig()
     if a.symbols:
         cfg = ORBConfig(**{**cfg.__dict__, "symbols": [s.upper() for s in a.symbols]})
 
-    print(f"Live ORB monitor — symbols {cfg.symbols}, poll {a.poll}s. NO orders are placed.")
+    mode = "real-time websocket" if a.stream else f"REST poll {a.poll}s"
+    print(f"Live ORB monitor — symbols {cfg.symbols}, {mode}. NO orders are placed.")
     print(f"Telegram alerts: {'ON' if telegram_configured() else 'OFF (set TELEGRAM_* in .env)'}")
     print("Ctrl+C to stop.\n")
     try:
-        run_live(cfg, poll_seconds=a.poll, max_iterations=1 if a.once else None)
+        if a.stream:
+            from orb.stream import run_stream  # imports websocket (the [live] extra)
+            run_stream(cfg)
+        else:
+            run_live(cfg, poll_seconds=a.poll, max_iterations=1 if a.once else None)
     except KeyboardInterrupt:
         print("\nStopped.")
     return 0

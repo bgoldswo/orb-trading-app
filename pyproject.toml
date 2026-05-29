@@ -15,6 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 ui = ["streamlit>=1.30", "plotly>=5.18"]
+live = ["websocket-client>=1.6"]   # real-time bar stream (Alpaca IEX websocket)
 
 [tool.setuptools.packages.find]
 where = ["src"]
