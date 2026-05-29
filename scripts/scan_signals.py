@@ -23,6 +23,7 @@ import pandas as pd
 
 from orb.config import ORBConfig
 from orb.data import load_intraday
+from orb.notify import notify_signals, telegram_configured
 from orb.signals import DEFAULT_LOG, log_signals, scan_for_signals
 
 ET = "America/New_York"
@@ -33,6 +34,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("symbols", nargs="*", help="Symbols to scan (default: ORBConfig.symbols).")
     p.add_argument("--asof", default=None, help="Session date YYYY-MM-DD (default: latest available).")
     p.add_argument("--lookback", type=int, default=40, help="Calendar days of data to fetch.")
+    p.add_argument("--no-notify", action="store_true", help="Skip Telegram alerts even if configured.")
     return p.parse_args(argv)
 
 
@@ -77,6 +79,14 @@ def main(argv: list[str] | None = None) -> int:
             f"entry~{s.reference_entry} stop {s.stop_level} target {s.target_level} "
             f"(~{s.suggested_shares} sh) — {s.note}"
         )
+
+    # Alert on NEW signals only (so re-runs don't re-ping you).
+    if new and not args.no_notify:
+        if telegram_configured():
+            sent = notify_signals(new)
+            print(f"Telegram: sent {sent}/{len(new)} alert(s).")
+        else:
+            print("Telegram not configured (set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID in .env to get alerts).")
     return 0
 
 
