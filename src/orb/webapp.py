@@ -21,6 +21,7 @@ from .backtest import EOD, STOP, TARGET, run_backtest
 from .config import ORBConfig
 from .data import load_intraday
 from .metrics import performance_summary
+from .signals import DEFAULT_LOG, load_signal_log, log_signals, scan_for_signals
 
 # Exit-reason colors used across charts/labels.
 _EXIT_COLORS = {TARGET: "#16a34a", STOP: "#dc2626", EOD: "#64748b"}
@@ -390,8 +391,7 @@ def _render_results(res: dict) -> None:
 # --------------------------------------------------------------------------- #
 # main
 # --------------------------------------------------------------------------- #
-def main() -> None:
-    st.set_page_config(page_title="ORB Backtester", page_icon="📈", layout="wide")
+def backtest_page() -> None:
     st.title("📈 ORB Backtester")
     st.caption(
         "Opening Range Breakout — backtest only, **no orders**. "
@@ -426,3 +426,75 @@ def main() -> None:
         _render_results(st.session_state["results"])
     else:
         st.info("👈 Set your parameters in the sidebar, then click **▶ Run backtest**.")
+
+
+# --------------------------------------------------------------------------- #
+# paper signals page
+# --------------------------------------------------------------------------- #
+_SIGNAL_GUIDE = """
+This page scans **recent / delayed** market data for the day's ORB breakout
+signals and logs them. It is **paper only** — it places **no orders** and is not
+financial advice. Each signal shows the intended entry, stop, target, and a
+risk-based suggested size, plus a timestamp of when it was detected.
+
+Run it **after the close** (the free data feed is ~15 minutes delayed). A daily
+scheduled task can do this automatically; this page lets you scan on demand and
+review the running log.
+"""
+
+_SIGNAL_COLS = {
+    "asof_date": "Date", "symbol": "Symbol", "direction": "Side",
+    "reference_entry": "Entry", "stop_level": "Stop", "target_level": "Target",
+    "suggested_shares": "Shares", "emitted_at": "Detected (UTC)",
+}
+
+
+def signals_page() -> None:
+    st.title("📡 Paper signals")
+    st.caption("ORB breakout signals on delayed data — **no orders placed**. Not financial advice.")
+    with st.expander("ℹ️ What is this?", expanded=True):
+        st.markdown(_SIGNAL_GUIDE)
+
+    cfg = ORBConfig()
+    symbols_raw = st.text_input("Symbols", value=", ".join(cfg.symbols))
+    lookback = st.slider("Data lookback (calendar days)", 5, 90, 40,
+                         help="How much recent data to pull (more is needed if day filters use a long ATR).")
+    scan = st.button("📡 Scan latest session", type="primary")
+
+    if scan:
+        symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()]
+        if not symbols:
+            st.error("Enter at least one symbol.")
+        else:
+            run_cfg = ORBConfig(**{**cfg.__dict__, "symbols": symbols})
+            end = pd.Timestamp.now(tz="America/New_York").normalize()
+            start = (end - pd.Timedelta(days=lookback)).date().isoformat()
+            try:
+                with st.spinner("Fetching delayed data and scanning…"):
+                    bars = {s: _cached_load(s, start, end.date().isoformat(), run_cfg.bar_minutes) for s in symbols}
+                    found = scan_for_signals(bars, run_cfg)
+                    new = log_signals(found, DEFAULT_LOG)
+                if found:
+                    st.success(f"{len(found)} signal(s) for the latest session — {len(new)} new, logged to {DEFAULT_LOG}.")
+                    df = pd.DataFrame(s.to_record() for s in found)
+                    st.dataframe(df[list(_SIGNAL_COLS)].rename(columns=_SIGNAL_COLS),
+                                 use_container_width=True, hide_index=True)
+                else:
+                    st.info("No ORB signals for the latest available session.")
+            except Exception as exc:
+                st.error(str(exc))
+                st.info("Data comes from Alpaca — set `ALPACA_API_KEY` / `ALPACA_API_SECRET` in `.env`.")
+
+    st.subheader("Signal log")
+    log_df = load_signal_log(DEFAULT_LOG)
+    if log_df.empty:
+        st.caption("No signals logged yet. Scan a session above (or let the daily task run).")
+    else:
+        show = [c for c in _SIGNAL_COLS if c in log_df.columns]
+        st.dataframe(log_df[show].rename(columns=_SIGNAL_COLS).iloc[::-1],
+                     use_container_width=True, hide_index=True)
+        st.download_button(
+            "⬇ Download signal log (CSV)",
+            log_df.to_csv(index=False).encode("utf-8"),
+            file_name="orb_signals.csv", mime="text/csv",
+        )

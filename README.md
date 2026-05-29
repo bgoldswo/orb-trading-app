@@ -30,8 +30,11 @@ src/orb/
   strategy.py   # ORB signal logic (look-ahead-safe) — implemented
   backtest.py   # backtest engine (cost model, stop/target) — implemented
   metrics.py    # performance metrics — implemented
-  webapp.py     # Streamlit dashboard (Phase 3) — implemented
+  webapp.py     # Streamlit dashboard: Backtest + Paper signals pages
+  signals.py    # paper-signal scan engine + timestamped logger (Phase 4)
 streamlit_app.py   # dashboard entry point (`streamlit run streamlit_app.py`)
+scripts/scan_signals.py            # CLI: scan delayed data, log signals (no orders)
+scripts/install_scheduled_scan.ps1 # register the daily scan (Windows Task Scheduler)
 docs/SPEC.md       # specification + acceptance criteria
 docs/ORB_RULES.md  # precise strategy definition + failure modes
 docs/RESULTS.md    # backtest findings log (incl. Phase 2 baseline)
@@ -79,6 +82,28 @@ Data loads via the same Alpaca-backed `load_intraday` (needs `.env` keys on firs
 fetch, then served from `data/cache/`). The dashboard places **no orders** — it's
 a research tool, not financial advice.
 
+## Paper signals (Phase 4)
+Scan recent/**delayed** data for the day's ORB breakout signals — entry, stop,
+target, and a risk-based suggested size — **logged and timestamped**. This places
+**no orders**; every record carries `placed_order: false`. Live execution remains
+an explicitly-gated future phase.
+
+```bash
+python scripts/scan_signals.py            # cfg.symbols, latest session
+python scripts/scan_signals.py NVDA TSLA  # override symbols
+```
+Signals append to `outputs/signals.jsonl` (idempotent per day+symbol). The
+dashboard's **Paper signals** page scans on demand and shows the running log.
+
+**Daily automation (Windows Task Scheduler):**
+```powershell
+# Register a weekday job (time is LOCAL — set ~30 min after the 16:00 ET close)
+powershell -ExecutionPolicy Bypass -File scripts\install_scheduled_scan.ps1 -Time 16:30
+# Remove it
+powershell -ExecutionPolicy Bypass -File scripts\uninstall_scheduled_scan.ps1
+```
+Run output is captured to `outputs/scan.log`.
+
 ## Phase status
 - [x] **Phase 1 — Discovery:** spec, precise ORB rules, scaffold, CI.
 - [x] **Phase 2 — Backtesting core:** look-ahead-safe ORB engine with cost model,
@@ -86,7 +111,9 @@ a research tool, not financial advice.
   computation, entry timing, and stop/target resolution.
 - [x] **Phase 3 — Dashboard UI:** Streamlit app to configure params, run a
   backtest, and view the equity curve, metrics, exit breakdown, and trade log.
-- [ ] Phase 4 — Paper-trading signals
+- [x] **Phase 4 — Paper-trading signals:** scan delayed data for the day's ORB
+  signals, logged + timestamped, **no orders** — via CLI, a dashboard page, and a
+  daily scheduled task.
 - [ ] Phase 5 — (gated) Live execution
 
 ## Configuration & secrets
