@@ -81,7 +81,8 @@ _SMALL_SPACE = {"opening_range_minutes": [5, 15], "take_profit_r": [2.0]}
 
 def test_walk_forward_runs_and_is_deterministic():
     bars = {"SPY": _months_of_bars("2024-01-01", periods=100, win=True)}
-    kw = dict(space=_SMALL_SPACE, is_days=60, oos_days=30, objective="avg_r", min_trades=5)
+    kw = dict(space=_SMALL_SPACE, is_days=60, oos_days=30, objective="avg_r",
+              min_trades=5, workers=1)  # serial keeps the unit test fast
     r1 = walk_forward(bars, ORBConfig(), **kw)
     r2 = walk_forward(bars, ORBConfig(), **kw)
 
@@ -95,10 +96,20 @@ def test_walk_forward_runs_and_is_deterministic():
     pd.testing.assert_series_equal(r1.oos_equity_curve, r2.oos_equity_curve)
 
 
+def test_parallel_matches_serial():
+    # The parallel in-sample search must yield byte-identical results to serial.
+    bars = {"SPY": _months_of_bars("2024-01-01", periods=90, win=True)}
+    kw = dict(space=_SMALL_SPACE, is_days=60, oos_days=30, objective="avg_r", min_trades=5)
+    serial = walk_forward(bars, ORBConfig(), workers=1, **kw)
+    parallel = walk_forward(bars, ORBConfig(), workers=2, **kw)
+    assert [f.best_params for f in serial.folds] == [f.best_params for f in parallel.folds]
+    pd.testing.assert_series_equal(serial.oos_equity_curve, parallel.oos_equity_curve)
+
+
 def test_walk_forward_oos_curve_compounds_to_final_equity():
     bars = {"SPY": _months_of_bars("2024-01-01", periods=100, win=True)}
     r = walk_forward(bars, ORBConfig(), space=_SMALL_SPACE, is_days=60, oos_days=30,
-                     objective="avg_r", min_trades=5)
+                     objective="avg_r", min_trades=5, workers=1)
     # The stitched OOS curve starts at starting_equity and ends above it (winning days).
     assert r.oos_equity_curve.iloc[0] == pytest.approx(ORBConfig().starting_equity)
     assert r.oos_performance.final_equity == pytest.approx(r.oos_equity_curve.iloc[-1])
