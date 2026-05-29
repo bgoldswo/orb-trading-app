@@ -20,7 +20,7 @@ import pandas as pd
 from orb.config import ORBConfig
 from orb.data import load_intraday
 from orb.metrics import performance_summary  # noqa: F401  (kept for parity/debugging)
-from orb.optimize import OBJECTIVES, folds_to_frame, walk_forward
+from orb.optimize import OBJECTIVES, STRATEGIES, folds_to_frame, walk_forward
 
 ET = "America/New_York"
 
@@ -37,6 +37,8 @@ def _args(argv):
     p.add_argument("--min-trades", type=int, default=10, help="Min IS trades for a combo to qualify.")
     p.add_argument("--workers", type=int, default=None,
                    help="Parallel processes for the in-sample search (default: auto = cores).")
+    p.add_argument("--strategy", choices=list(STRATEGIES), default="orb",
+                   help="Which strategy to optimize (orb = Opening Range Breakout, ma = EMA crossover).")
     return p.parse_args(argv)
 
 
@@ -50,7 +52,8 @@ def main(argv=None) -> int:
     symbols = [s.upper() for s in a.symbols] if a.symbols else cfg.symbols
     cfg = ORBConfig(**{**cfg.__dict__, "symbols": symbols})
 
-    print(f"Walk-forward optimization on {symbols}  ({a.start} -> {a.end})")
+    signal_fn, space = STRATEGIES[a.strategy]
+    print(f"Walk-forward optimization [{a.strategy}] on {symbols}  ({a.start} -> {a.end})")
     print(f"  IS={a.is_days}d  OOS={a.oos_days}d  objective={a.objective}  min_trades={a.min_trades}")
     try:
         bars = {s: load_intraday(s, a.start, a.end, cfg.bar_minutes) for s in symbols}
@@ -59,8 +62,9 @@ def main(argv=None) -> int:
         return 2
 
     result = walk_forward(
-        bars, cfg, is_days=a.is_days, oos_days=a.oos_days,
+        bars, cfg, space=space, is_days=a.is_days, oos_days=a.oos_days,
         objective=a.objective, min_trades=a.min_trades, workers=a.workers,
+        signal_fn=signal_fn,
     )
     if not result.folds:
         print("Not enough data for a single IS+OOS fold. Widen the date range or shorten the windows.")

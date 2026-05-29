@@ -159,6 +159,15 @@ runs in parallel across CPU cores (`--workers`, default auto). **Optimization
 cannot create an edge that isn't in the data** — if ORB has none on a universe, the
 OOS result will show it. See `src/orb/optimize.py` and findings in `docs/RESULTS.md`.
 
+The engine is **strategy-agnostic** — `run_backtest(bars, cfg, signal_fn=...)` and
+the optimizer accept any signal generator. Two are built in (`--strategy`):
+```bash
+python scripts/optimize.py --strategy orb SPY QQQ   # Opening Range Breakout (default)
+python scripts/optimize.py --strategy ma  SPY QQQ   # intraday EMA crossover
+```
+Add your own by writing a `signal_fn(day_bars, cfg) -> list[Signal]` (see
+`src/orb/ma_crossover.py`) and registering it in `STRATEGIES`.
+
 ## Phase status
 - [x] **Phase 1 — Discovery:** spec, precise ORB rules, scaffold, CI.
 - [x] **Phase 2 — Backtesting core:** look-ahead-safe ORB engine with cost model,
