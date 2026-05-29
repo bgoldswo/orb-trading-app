@@ -14,7 +14,13 @@ pytest.importorskip("streamlit")
 
 from orb.backtest import run_backtest
 from orb.config import ORBConfig
-from orb.webapp import _build_config, _equity_drawdown_fig, _exit_fig, _style_trade_log
+from orb.webapp import (
+    _build_config,
+    _equity_drawdown_fig,
+    _exit_fig,
+    _style_trade_log,
+    _trade_chart_fig,
+)
 from synthetic import flat_day, set_bar, set_opening_range
 
 
@@ -98,3 +104,18 @@ def test_chart_and_table_builders_run_without_error():
     # Styler renders fully (catches format/column-name drift).
     html = _style_trade_log(trade_log).to_html()
     assert "P&L" in html and "Symbol" in html
+
+
+def test_trade_chart_builds_with_levels_and_markers():
+    d = "2024-03-04"
+    df = flat_day(d, 100.0)
+    set_opening_range(df, d, 100.0, 99.0)
+    set_bar(df, d, "09:45", c=100.5)
+    set_bar(df, d, "09:46", o=100.5)
+    set_bar(df, d, "09:50", h=104.0)  # target
+    trade_log, _ = run_backtest({"SPY": df}, ORBConfig())
+    trade = trade_log.iloc[0].to_dict()
+    fig = _trade_chart_fig(df, trade, ORBConfig())
+    # Candlestick + entry marker + exit marker traces present, builds cleanly.
+    assert len(fig.data) >= 3
+    assert any(getattr(t, "type", "") == "candlestick" for t in fig.data)

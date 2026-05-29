@@ -71,9 +71,13 @@ cfg = ORBConfig(use_gap_filter=True, use_or_width_filter=True)
 See `src/orb/filters.py` (look-ahead-safe; fail-closed when context is missing).
 
 ## Dashboard (Phase 3)
-A Streamlit app wraps the engine — configure parameters, run a backtest, and view
-the equity curve, headline metrics, exit-reason breakdown, and the trade log
-(with CSV download).
+A multi-page Streamlit app wraps the engine:
+- **Backtest** — configure params, run a backtest; view the equity/drawdown curve,
+  headline metrics, exit breakdown, trade log (CSV), and a **trade chart** that
+  draws the opening range plus each trade's entry/stop/target/exit on candlesticks.
+- **Optimizer** — run the **walk-forward optimizer** in the browser (the bot picks
+  params; the out-of-sample number + overfitting gap are shown).
+- **Paper signals** — scan for the day's signals and view the running log.
 ```bash
 pip install -e ".[ui]"
 streamlit run streamlit_app.py

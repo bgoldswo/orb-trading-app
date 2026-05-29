@@ -21,7 +21,9 @@ from .backtest import EOD, STOP, TARGET, run_backtest
 from .config import ORBConfig
 from .data import load_intraday
 from .metrics import performance_summary
+from .optimize import STRATEGIES, folds_to_frame, walk_forward
 from .signals import DEFAULT_LOG, load_signal_log, log_signals, scan_for_signals
+from .strategy import compute_opening_range
 
 # Exit-reason colors used across charts/labels.
 _EXIT_COLORS = {TARGET: "#16a34a", STOP: "#dc2626", EOD: "#64748b"}
@@ -76,6 +78,8 @@ def _run(form: dict) -> dict:
         "trade_log": trade_log,
         "equity_curve": equity_curve,
         "perf": performance_summary(trade_log, equity_curve),
+        "start": form["start"],
+        "end": form["end"],
     }
 
 
@@ -298,6 +302,52 @@ def _exit_fig(trade_log: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def _trade_chart_fig(day_bars: pd.DataFrame, trade: dict, cfg) -> go.Figure:
+    """Candlestick of one session with OR levels and the trade's entry/stop/
+    target/exit drawn on top — so you can *see* what the strategy did."""
+    rng = compute_opening_range(day_bars, cfg)
+    fig = go.Figure(
+        go.Candlestick(
+            x=day_bars.index, open=day_bars["open"], high=day_bars["high"],
+            low=day_bars["low"], close=day_bars["close"], name="price",
+            increasing_line_color="#16a34a", decreasing_line_color="#dc2626",
+        )
+    )
+    # Opening-range band.
+    if rng is not None:
+        fig.add_hline(y=rng.high, line=dict(color="#2563eb", dash="dot", width=1),
+                      annotation_text="OR high", annotation_position="right")
+        fig.add_hline(y=rng.low, line=dict(color="#2563eb", dash="dot", width=1),
+                      annotation_text="OR low", annotation_position="right")
+
+    # Stop / target levels.
+    fig.add_hline(y=trade["stop_level"], line=dict(color="#dc2626", dash="dash", width=1),
+                  annotation_text="stop", annotation_position="left")
+    fig.add_hline(y=trade["target_level"], line=dict(color="#16a34a", dash="dash", width=1),
+                  annotation_text="target", annotation_position="left")
+
+    # Entry + exit markers.
+    is_long = trade["direction"] == "long"
+    fig.add_trace(go.Scatter(
+        x=[trade["entry_ts"]], y=[trade["entry_price"]], mode="markers", name="entry",
+        marker=dict(symbol="triangle-up" if is_long else "triangle-down", size=14,
+                    color="#2563eb", line=dict(width=1, color="white")),
+    ))
+    exit_color = {TARGET: "#16a34a", STOP: "#dc2626", EOD: "#64748b"}.get(trade["exit_reason"], "#64748b")
+    fig.add_trace(go.Scatter(
+        x=[trade["exit_ts"]], y=[trade["exit_price"]], mode="markers",
+        name=f"exit ({trade['exit_reason']})",
+        marker=dict(symbol="x", size=13, color=exit_color, line=dict(width=1)),
+    ))
+    fig.update_layout(
+        height=460, margin=dict(l=10, r=10, t=30, b=10),
+        xaxis_rangeslider_visible=False, hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+    )
+    return fig
+
+
 def _style_trade_log(trade_log: pd.DataFrame):
     """A compact, formatted, color-coded view of the trade log."""
     df = trade_log.copy()
@@ -364,11 +414,13 @@ def _render_results(res: dict) -> None:
         st.info("No trades were generated for these parameters / window. Try a longer window or different settings.")
         return
 
-    tab_overview, tab_equity, tab_trades, tab_guide = st.tabs(
-        ["📈 Equity & drawdown", "🎯 Exits", "📋 Trade log", "❓ What do these mean?"]
+    tab_overview, tab_chart, tab_equity, tab_trades, tab_guide = st.tabs(
+        ["📈 Equity & drawdown", "🔍 Trade chart", "🎯 Exits", "📋 Trade log", "❓ What do these mean?"]
     )
     with tab_overview:
         st.plotly_chart(_equity_drawdown_fig(res["equity_curve"]), use_container_width=True)
+    with tab_chart:
+        _render_trade_chart(res)
     with tab_equity:
         left, right = st.columns([2, 1])
         with left:
@@ -386,6 +438,36 @@ def _render_results(res: dict) -> None:
         )
     with tab_guide:
         st.markdown(_GLOSSARY)
+
+
+def _render_trade_chart(res: dict) -> None:
+    """Pick a trade and draw its session: candlesticks + OR + entry/stop/target/exit."""
+    trade_log = res["trade_log"]
+    cfg = res["cfg"]
+    st.caption("See exactly what a trade did — opening range, breakout, and the entry/stop/target/exit.")
+
+    syms = sorted(trade_log["symbol"].unique())
+    c1, c2 = st.columns(2)
+    sym = c1.selectbox("Symbol", syms)
+    sym_log = trade_log[trade_log["symbol"] == sym]
+    dates = [d.strftime("%Y-%m-%d") for d in sym_log["date"]]
+    picked = c2.selectbox("Trade date", dates)
+
+    trade = sym_log[sym_log["date"].dt.strftime("%Y-%m-%d") == picked].iloc[0].to_dict()
+    try:
+        bars = _cached_load(sym, res["start"], res["end"], cfg.bar_minutes)
+        day_bars = bars[bars.index.strftime("%Y-%m-%d") == picked]
+        if day_bars.empty:
+            st.info("No bars cached for that day.")
+            return
+        st.plotly_chart(_trade_chart_fig(day_bars, trade, cfg), use_container_width=True)
+        st.caption(
+            f"{sym} {picked} — {trade['direction'].upper()} entry {trade['entry_price']:.2f} → "
+            f"exit {trade['exit_price']:.2f} ({trade['exit_reason']}), "
+            f"P&L ${trade['pnl']:+,.0f}, {trade['r_multiple']:+.2f}R"
+        )
+    except Exception as exc:
+        st.warning(f"Could not load bars for the chart: {exc}")
 
 
 # --------------------------------------------------------------------------- #
@@ -498,3 +580,83 @@ def signals_page() -> None:
             log_df.to_csv(index=False).encode("utf-8"),
             file_name="orb_signals.csv", mime="text/csv",
         )
+
+
+# --------------------------------------------------------------------------- #
+# optimizer page (walk-forward)
+# --------------------------------------------------------------------------- #
+_OPT_GUIDE = """
+Let the *machine* pick the parameters — honestly. This runs **walk-forward**
+optimization: it tunes on an in-sample window, then scores on the next *unseen*
+out-of-sample window and rolls forward. The **out-of-sample** result is the honest
+estimate; a big in-sample-minus-out-of-sample gap means the 'edge' was overfitting.
+
+Heads-up: a full run does many backtests and can take a few minutes here. For big
+sweeps the CLI is faster (it parallelizes across cores): `python scripts/optimize.py`.
+"""
+
+
+def optimizer_page() -> None:
+    st.title("🧪 Walk-forward optimizer")
+    st.caption("The bot chooses parameters; the **out-of-sample** number is the honest one. No orders.")
+    with st.expander("ℹ️ What is this?", expanded=True):
+        st.markdown(_OPT_GUIDE)
+
+    today = pd.Timestamp.today().normalize()
+    c1, c2, c3 = st.columns(3)
+    symbols_raw = c1.text_input("Symbols", value="SPY, QQQ")
+    strategy = c2.selectbox("Strategy", list(STRATEGIES),
+                            format_func=lambda s: {"orb": "ORB", "ma": "EMA crossover"}.get(s, s))
+    objective = c3.selectbox("Objective", ["avg_r", "sharpe", "total_return", "profit_factor"])
+    c4, c5, c6 = st.columns(3)
+    start = c4.date_input("Start", value=(today - pd.DateOffset(years=2)).date())
+    is_days = c5.number_input("In-sample days", 60, 1095, 365, 5)
+    oos_days = c6.number_input("Out-of-sample days", 30, 365, 90, 5)
+    end = (today - pd.Timedelta(days=1)).date()
+
+    if st.button("🧪 Run walk-forward", type="primary"):
+        symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()]
+        if not symbols:
+            st.error("Enter at least one symbol.")
+            return
+        signal_fn, space = STRATEGIES[strategy]
+        cfg = ORBConfig(**{**ORBConfig().__dict__, "symbols": symbols})
+        try:
+            with st.spinner("Loading data and running walk-forward (this can take a few minutes)…"):
+                bars = {s: _cached_load(s, start.isoformat(), end.isoformat(), cfg.bar_minutes)
+                        for s in symbols}
+                result = walk_forward(
+                    bars, cfg, space=space, is_days=int(is_days), oos_days=int(oos_days),
+                    objective=objective, workers=1, signal_fn=signal_fn,  # serial: robust in-app
+                )
+            st.session_state["opt_result"] = result
+            st.session_state.pop("opt_error", None)
+        except Exception as exc:
+            st.session_state["opt_error"] = str(exc)
+            st.session_state.pop("opt_result", None)
+
+    if st.session_state.get("opt_error"):
+        st.error(st.session_state["opt_error"])
+        return
+    result = st.session_state.get("opt_result")
+    if result is None:
+        st.info("Set the universe + windows above and click **Run walk-forward**.")
+        return
+    if not result.folds:
+        st.warning("Not enough data for a single in-sample + out-of-sample fold. Widen the date range.")
+        return
+
+    gap = result.overfitting_gap
+    g1, g2, g3 = st.columns(3)
+    g1.metric(f"In-sample {result.objective}", f"{result.mean_is_objective:+.3f}")
+    g2.metric(f"Out-of-sample {result.objective}", f"{result.mean_oos_objective:+.3f}")
+    g3.metric("Overfitting gap", f"{gap:+.3f}", help="In-sample minus out-of-sample. Large positive = the edge didn't survive.")
+    if gap > 0.05:
+        st.warning("Large positive gap — the in-sample 'edge' largely did **not** survive out of sample (overfitting).")
+
+    st.subheader("Stitched out-of-sample equity")
+    st.plotly_chart(_equity_drawdown_fig(result.oos_equity_curve), use_container_width=True)
+    _render_metrics(result.oos_performance)
+
+    st.subheader("Per fold — chosen params & in-sample vs out-of-sample")
+    st.dataframe(folds_to_frame(result), use_container_width=True, hide_index=True)
