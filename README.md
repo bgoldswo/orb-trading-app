@@ -104,6 +104,20 @@ powershell -ExecutionPolicy Bypass -File scripts\uninstall_scheduled_scan.ps1
 ```
 Run output is captured to `outputs/scan.log`.
 
+## Auto parameter selection — walk-forward optimization (Phase 4.5)
+Let the *machine* choose the parameters, honestly. Naive optimization over all
+history overfits and lies; this uses **walk-forward**: optimize on an in-sample
+window, then measure on the next *unseen* out-of-sample window, roll forward, and
+stitch the OOS slices into one equity curve. The in-sample-vs-out-of-sample gap is
+reported as the overfitting tell.
+```bash
+python scripts/optimize.py SPY QQQ --is-days 365 --oos-days 90 --objective avg_r
+```
+The bot searches OR-minutes, take-profit R, direction, and the day filters, with a
+minimum-trades guard so a low-count fluke can't win. **Optimization cannot create
+an edge that isn't in the data** — if ORB has none on a universe, the OOS result
+will show it. See `src/orb/optimize.py`.
+
 ## Phase status
 - [x] **Phase 1 — Discovery:** spec, precise ORB rules, scaffold, CI.
 - [x] **Phase 2 — Backtesting core:** look-ahead-safe ORB engine with cost model,
@@ -114,6 +128,9 @@ Run output is captured to `outputs/scan.log`.
 - [x] **Phase 4 — Paper-trading signals:** scan delayed data for the day's ORB
   signals, logged + timestamped, **no orders** — via CLI, a dashboard page, and a
   daily scheduled task.
+- [x] **Phase 4.5 — Walk-forward optimization:** the bot searches the parameter
+  space and reports honest *out-of-sample* performance, flagging overfitting (the
+  human defines the search, not the parameters).
 - [ ] Phase 5 — (gated) Live execution
 
 ## Configuration & secrets

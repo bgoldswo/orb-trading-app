@@ -58,3 +58,40 @@ The backtester did its job: it disproved a fragile edge cheaply. Default ORB on
 these ETFs has no edge here once costs are honest. Sensible next steps (without
 overfitting): verify on SIP data, and/or test a higher-volatility single-name
 universe — not parameter-mining this window.
+
+---
+
+## Phase 4.5 — walk-forward optimization on SPY + QQQ ("let the bot pick")
+
+- **Date run:** 2026-05-29
+- **Window:** 2024-05-29 → 2026-05-28; IS=365d, OOS=90d (rolling)
+- **Search space:** OR-minutes {5,15,30} × take-profit R {1.5,2,2.5,3} × direction
+  {long_only, long_short} × gap filter {off,on} × OR-width filter {off,on} = 96 combos
+- **Objective:** Avg R (expectancy), min 10 in-sample trades to qualify
+- **Reproduce:** `python scripts/optimize.py SPY QQQ --is-days 365 --oos-days 90 --objective avg_r`
+
+The optimizer chose parameters per fold on in-sample data, then was scored on the
+next unseen out-of-sample window:
+
+| OOS window | chosen params | IS avg R | OOS avg R | OOS return |
+|---|---|--:|--:|--:|
+| 2025-05→08 | OR30, 3R, L/S, gap+width | +0.100 | −0.191 | −8.7% |
+| 2025-08→11 | OR15, 1.5R, L/S, width | +0.034 | −0.107 | −8.5% |
+| 2025-11→02 | OR15, 3R, L/S, gap+width | +0.034 | +0.213 | +10.1% |
+| 2026-02→05 | OR15, 3R, L/S, gap+width | +0.043 | −0.416 | −22.1% |
+| 2026-05 (partial) | OR30, 3R, L/S | −0.036 | +0.340 | +2.0% |
+
+**Stitched out-of-sample:** 232 trades, win 40.1%, **return −26.9%**, maxDD 32.2%,
+Sharpe −1.19, avg R −0.123, PF 0.80.
+
+**Overfitting check (avg R):** IS mean **+0.035** vs OOS mean **−0.032**
+(gap **+0.067**). The in-sample "edge" *flipped to a loss out of sample*.
+
+### Conclusion
+Letting the machine choose parameters — done honestly via walk-forward — **confirms
+there is no robust ORB edge on SPY/QQQ**. The optimizer did find slightly positive
+*in-sample* expectancy each fold, but it did not survive out of sample (it inverted).
+This is exactly why we built it walk-forward: a naive grid search would have
+reported the +0.035 in-sample figure and called it a winner. The honest answer is
+the opposite. To actually find an edge, change the **universe** (e.g. volatile
+single names), not the parameter search on these ETFs.

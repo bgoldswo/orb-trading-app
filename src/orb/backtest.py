@@ -110,13 +110,16 @@ def _simulate_trade(
     exit_price = None
     exit_reason = None
 
-    for ts, bar in trade_bars.iterrows():
+    # itertuples (not iterrows) — much faster on the per-bar walk, which dominates
+    # runtime under the optimizer's thousands of backtests. Logic is identical.
+    for row in trade_bars.itertuples():
+        ts = row.Index
         # Flatten before the close regardless of P&L.
         if ts.time() >= eod_t:
-            exit_ts, exit_price, exit_reason = ts, float(bar["open"]), EOD
+            exit_ts, exit_price, exit_reason = ts, float(row.open), EOD
             break
 
-        hi, lo = float(bar["high"]), float(bar["low"])
+        hi, lo = float(row.high), float(row.low)
         if is_long:
             hit_stop = lo <= stop_level
             hit_target = hi >= target_level
