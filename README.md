@@ -104,6 +104,21 @@ powershell -ExecutionPolicy Bypass -File scripts\uninstall_scheduled_scan.ps1
 ```
 Run output is captured to `outputs/scan.log`.
 
+### Fidelity order tickets + Telegram alerts
+Each signal can be rendered as a copy-paste **Fidelity bracket order** (a
+One-Triggers-an-OCO: entry limit + protective stop + target) — since Fidelity has
+no trading API, execution stays manual. New signals can also push to your phone
+via **Telegram** (optional). To enable alerts:
+1. In Telegram, message **@BotFather** → `/newbot` → copy the bot token into `.env`
+   as `TELEGRAM_BOT_TOKEN`.
+2. Send your new bot any message, then run `python scripts/telegram_setup.py` to
+   discover your chat id; put it in `.env` as `TELEGRAM_CHAT_ID`.
+3. Run it again to send a test. After that, `scan_signals.py` (and the daily task)
+   text you a ready-to-place order ticket for each **new** signal.
+
+Alerts are optional and fail-safe: if Telegram isn't configured, scanning still
+logs signals normally. Nothing here places an order.
+
 ## Auto parameter selection — walk-forward optimization (Phase 4.5)
 Let the *machine* choose the parameters, honestly. Naive optimization over all
 history overfits and lies; this uses **walk-forward**: optimize on an in-sample
