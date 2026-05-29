@@ -119,6 +119,20 @@ via **Telegram** (optional). To enable alerts:
 Alerts are optional and fail-safe: if Telegram isn't configured, scanning still
 logs signals normally. Nothing here places an order.
 
+### Live intraday monitor (real-time-ish alerts)
+Run during market hours to get alerted the moment an ORB breakout fires — not
+after the close. It watches your symbols, detects the day's signal as it forms,
+and Telegram-alerts you the Fidelity ticket. **It places no orders** — you trade
+manually.
+```bash
+python scripts/live_monitor.py            # cfg.symbols, poll every 60s
+python scripts/live_monitor.py NVDA TSLA --poll 30
+python scripts/live_monitor.py --once     # single pass (testing)
+```
+Data caveat: the **free IEX feed is ~15 min delayed**, so alerts lag ~15 min —
+fine for testing, but real-time entry needs a paid feed (`ALPACA_FEED=sip` with a
+subscription, or Polygon). The loop is feed-agnostic; only the data source changes.
+
 ## Auto parameter selection — walk-forward optimization (Phase 4.5)
 Let the *machine* choose the parameters, honestly. Naive optimization over all
 history overfits and lies; this uses **walk-forward**: optimize on an in-sample

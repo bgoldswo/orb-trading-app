@@ -40,5 +40,6 @@ htmlcov/
 .idea/
 .DS_Store
 
-# Claude Code local settings
+# Claude Code settings (tooling config — not part of the project)
 .claude/settings.local.json
+.claude/settings.json
