@@ -86,7 +86,7 @@ def _simulate_trade(
     )
 
     # --- stop / target levels ---
-    stop_level = signal.or_low if is_long else signal.or_high
+    stop_level = signal.stop_level
     risk_per_share = abs(entry_price - stop_level)
     if risk_per_share <= 0:
         # Degenerate: entry already at/through the stop — no tradeable risk.
@@ -175,15 +175,21 @@ def _day_key(bars: pd.DataFrame) -> pd.Series:
     return pd.Series(bars.index.normalize(), index=bars.index)
 
 
-def run_backtest(bars_by_symbol: dict[str, pd.DataFrame], cfg):
-    """Simulate ORB across symbols and return ``(trade_log, equity_curve)``.
+def run_backtest(bars_by_symbol: dict[str, pd.DataFrame], cfg, signal_fn=generate_signals):
+    """Simulate a strategy across symbols and return ``(trade_log, equity_curve)``.
 
+    - ``signal_fn(day_bars, cfg) -> list[Signal]`` is the strategy. Defaults to ORB
+      (``generate_signals``); pass another generator to backtest a different
+      strategy through the same cost model and exit logic.
     - ``trade_log`` is a DataFrame, one row per trade, sorted by (date, symbol).
     - ``equity_curve`` is a Series of end-of-day equity indexed by date, with a
       leading point at ``starting_equity`` so returns can be computed.
 
     Determinism: symbols and dates are processed in sorted order, and all of a
     day's trades are sized off the equity recorded at the start of that day.
+
+    The opt-in day filters are ORB-specific (gap / opening-range width); they only
+    run when enabled in ``cfg``, so non-ORB strategies simply leave them off.
     """
     # Collect the union of trading dates across all symbols.
     per_symbol_days: dict[str, dict[pd.Timestamp, pd.DataFrame]] = {}
@@ -221,7 +227,7 @@ def run_backtest(bars_by_symbol: dict[str, pd.DataFrame], cfg):
                 day, daily_ctx.get(symbol), compute_opening_range(day_bars, cfg), cfg
             ):
                 continue
-            for signal in generate_signals(day_bars, cfg):
+            for signal in signal_fn(day_bars, cfg):
                 trade = _simulate_trade(
                     day_bars, signal, symbol, equity_before, cfg
                 )

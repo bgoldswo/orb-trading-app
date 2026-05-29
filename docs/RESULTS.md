@@ -125,3 +125,34 @@ edge) has been consistent across four independent tests.
 > Methodology note: the optimizer now parallelizes the per-fold in-sample search
 > across CPU cores (`--workers`, default auto), verified to produce identical
 > results to the serial path.
+
+---
+
+## A different strategy — intraday EMA crossover on SPY + QQQ
+
+The engine is now strategy-agnostic; this is a *different* strategy (fast/slow EMA
+cross, % stop + R-multiple target) run through the identical walk-forward + cost
+model — testing whether changing the *strategy* (not the universe) finds an edge.
+
+- **Date run:** 2026-05-29 · **Window:** 2024-05-29 → 2026-05-28 · IS=365d / OOS=90d
+- **Search space:** fast EMA {5,9,12} × slow EMA {20,30,50} × R {1.5,2,3} × direction
+- **Reproduce:** `python scripts/optimize.py --strategy ma SPY QQQ`
+
+**Stitched out-of-sample:** 502 trades, win 44.6%, **return −41.5%**, maxDD 50.4%,
+Sharpe −1.81, avg R −0.099, PF 0.73.
+
+**Overfitting check (avg R):** IS mean **−0.061** vs OOS mean **−0.084** (gap +0.024).
+
+### Conclusion
+EMA crossover is the **clearest loser yet** — and tellingly, its in-sample avg R was
+**already negative** (−0.061). The optimizer couldn't find a profitable parameter set
+even *in hindsight* on the training data, so there was no in-sample "edge" to overfit
+(hence the tiny gap). It just loses, consistently.
+
+**The pattern across all tests is now unmistakable:** plain ORB, filtered ORB,
+bot-optimized ORB (ETFs and volatile names), and bot-optimized EMA crossover — **none
+show a robust out-of-sample edge** on liquid US equities once realistic costs are
+modeled. This matches the well-documented reality that simple intraday
+technical-analysis edges are largely arbitraged away and/or eaten by costs. The
+honest verdict: **don't trade these with real money.** The value delivered is the
+*disproof* — cheaply, before any capital was at risk.

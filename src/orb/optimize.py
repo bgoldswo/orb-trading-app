@@ -32,17 +32,33 @@ import pandas as pd
 
 from .backtest import run_backtest
 from .config import ORBConfig
+from .ma_crossover import generate_ma_signals
 from .metrics import Performance, performance_summary
+from .strategy import generate_signals
 
 ET = "America/New_York"
 
-# Full search space (every knob the bot may choose).
+# Full ORB search space (every knob the bot may choose).
 DEFAULT_SEARCH_SPACE: dict[str, list] = {
     "opening_range_minutes": [5, 15, 30],
     "take_profit_r": [1.5, 2.0, 2.5, 3.0],
     "direction": ["long_only", "long_short"],
     "use_gap_filter": [False, True],
     "use_or_width_filter": [False, True],
+}
+
+# EMA-crossover search space.
+MA_SEARCH_SPACE: dict[str, list] = {
+    "fast_ema": [5, 9, 12],
+    "slow_ema": [20, 30, 50],
+    "take_profit_r": [1.5, 2.0, 3.0],
+    "direction": ["long_only", "long_short"],
+}
+
+# Strategy registry: name -> (signal generator, default search space).
+STRATEGIES = {
+    "orb": (generate_signals, DEFAULT_SEARCH_SPACE),
+    "ma": (generate_ma_signals, MA_SEARCH_SPACE),
 }
 
 OBJECTIVES = ("avg_r", "sharpe", "total_return", "profit_factor")
@@ -166,14 +182,15 @@ class WalkForwardResult:
         return self.mean_is_objective - self.mean_oos_objective
 
 
-def optimize_window(is_bars: dict, base_cfg, grid: list[dict], objective: str, min_trades: int):
+def optimize_window(is_bars: dict, base_cfg, grid: list[dict], objective: str,
+                    min_trades: int, signal_fn=generate_signals):
     """Grid-search one in-sample window; return (best_params, best_score, best_perf)."""
     best_params = None
     best_score = float("-inf")
     best_perf = None
     for combo in grid:  # deterministic order; strict > keeps the first on ties
         cfg = dataclasses.replace(base_cfg, **combo)
-        log, curve = run_backtest(is_bars, cfg)
+        log, curve = run_backtest(is_bars, cfg, signal_fn=signal_fn)
         perf = performance_summary(log, curve)
         score = _score(perf, objective, min_trades)
         if score > best_score:
@@ -186,8 +203,8 @@ def _optimize_fold(payload):
     Returns (fold_index, best_params, best_score, is_trades) — small + picklable.
     The per-fold IS search is independent, so this parallelizes cleanly and
     deterministically (results are keyed by fold index)."""
-    idx, is_bars, base_cfg, grid, objective, min_trades = payload
-    best, score, perf = optimize_window(is_bars, base_cfg, grid, objective, min_trades)
+    idx, is_bars, base_cfg, grid, objective, min_trades, signal_fn = payload
+    best, score, perf = optimize_window(is_bars, base_cfg, grid, objective, min_trades, signal_fn)
     return idx, best, score, (perf.num_trades if perf is not None else 0)
 
 
@@ -209,6 +226,7 @@ def walk_forward(
     objective: str = "avg_r",
     min_trades: int = 10,
     workers: int | None = None,
+    signal_fn=generate_signals,
 ) -> WalkForwardResult:
     """Run walk-forward optimization and return per-fold + stitched OOS results.
 
@@ -240,14 +258,14 @@ def walk_forward(
     n_workers = _resolve_workers(workers, len(valid))
     best_by_idx: dict[int, tuple] = {}
     if n_workers > 1 and len(valid) > 1:
-        payloads = [(idx, isb, base_cfg, grid, objective, min_trades)
+        payloads = [(idx, isb, base_cfg, grid, objective, min_trades, signal_fn)
                     for idx, _, _, _, _, isb in valid]
         with ProcessPoolExecutor(max_workers=n_workers) as ex:
             for idx, best, score, is_trades in ex.map(_optimize_fold, payloads):
                 best_by_idx[idx] = (best, score, is_trades)
     else:
         for idx, _, _, _, _, isb in valid:
-            best, score, perf = optimize_window(isb, base_cfg, grid, objective, min_trades)
+            best, score, perf = optimize_window(isb, base_cfg, grid, objective, min_trades, signal_fn)
             best_by_idx[idx] = (best, score, perf.num_trades if perf is not None else 0)
 
     # --- Phase B: sequential out-of-sample evaluation, compounding equity ---
@@ -265,7 +283,7 @@ def walk_forward(
 
         oos_bars = _slice(bars_by_symbol, _ts(oos_s), _ts(oos_e))
         oos_cfg = dataclasses.replace(base_cfg, starting_equity=running, **best)
-        log, curve = run_backtest(oos_bars, oos_cfg)
+        log, curve = run_backtest(oos_bars, oos_cfg, signal_fn=signal_fn)
         oos_perf = performance_summary(log, curve)
 
         daily = curve.iloc[1:]  # drop the synthetic leading point

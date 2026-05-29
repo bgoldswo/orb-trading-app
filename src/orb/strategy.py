@@ -44,15 +44,21 @@ class OpeningRange:
 
 @dataclass(frozen=True)
 class Signal:
-    """A look-ahead-safe entry signal. Prices here are pre-cost reference prices;
-    the backtest applies slippage/commission when filling."""
+    """A look-ahead-safe entry signal, strategy-agnostic. Prices are pre-cost
+    reference prices; the backtest applies slippage/commission when filling.
+
+    ``stop_level`` is the protective stop the backtest uses (the target is derived
+    from it via ``take_profit_r``). ``or_high``/``or_low`` are ORB-specific extras
+    (used by the paper-signal/filter paths) and may be None for other strategies.
+    """
 
     direction: str               # LONG | SHORT
-    confirmation_ts: pd.Timestamp  # bar whose CLOSE confirmed the breakout
+    confirmation_ts: pd.Timestamp  # bar whose CLOSE confirmed the entry condition
     entry_ts: pd.Timestamp         # NEXT bar — where the entry is actually filled
     reference_entry: float         # that next bar's open (pre-cost)
-    or_high: float
-    or_low: float
+    stop_level: float              # protective stop price
+    or_high: float | None = None
+    or_low: float | None = None
 
 
 def _parse_time(value: str) -> time:
@@ -165,12 +171,15 @@ def generate_signals(bars: pd.DataFrame, cfg) -> list[Signal]:
         if direction is None:
             continue
 
+        # ORB stop = opposite side of the opening range.
+        stop_level = rng.low if direction == LONG else rng.high
         signals.append(
             Signal(
                 direction=direction,
                 confirmation_ts=post_or.index[i],
                 entry_ts=entry_ts,
                 reference_entry=float(nxt["open"]),
+                stop_level=float(stop_level),
                 or_high=rng.high,
                 or_low=rng.low,
             )

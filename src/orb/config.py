@@ -26,6 +26,11 @@ class ORBConfig:
     take_profit_r: float = 2.0                 # target = R-multiple of risk
     eod_flat_time: str = "15:55"               # flatten before the close (ET)
 
+    # --- moving-average crossover strategy (used by ma_crossover.py) ---
+    fast_ema: int = 9                          # fast EMA period (bars)
+    slow_ema: int = 21                         # slow EMA period (bars)
+    ma_stop_pct: float = 0.005                 # protective stop = 0.5% from entry
+
     # --- sizing & capital ---
     risk_per_trade: float = 0.01               # fraction of equity risked / trade
     starting_equity: float = 100_000.0
