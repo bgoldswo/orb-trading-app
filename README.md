@@ -32,6 +32,8 @@ src/orb/
   metrics.py    # performance metrics — implemented
 docs/SPEC.md       # specification + acceptance criteria
 docs/ORB_RULES.md  # precise strategy definition + failure modes
+docs/RESULTS.md    # backtest findings log (incl. Phase 2 baseline)
+scripts/baseline.py # reproducible vanilla-vs-filters A/B run
 ```
 
 ## Running a backtest
