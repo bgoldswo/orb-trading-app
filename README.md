@@ -114,9 +114,10 @@ reported as the overfitting tell.
 python scripts/optimize.py SPY QQQ --is-days 365 --oos-days 90 --objective avg_r
 ```
 The bot searches OR-minutes, take-profit R, direction, and the day filters, with a
-minimum-trades guard so a low-count fluke can't win. **Optimization cannot create
-an edge that isn't in the data** — if ORB has none on a universe, the OOS result
-will show it. See `src/orb/optimize.py`.
+minimum-trades guard so a low-count fluke can't win. The per-fold in-sample search
+runs in parallel across CPU cores (`--workers`, default auto). **Optimization
+cannot create an edge that isn't in the data** — if ORB has none on a universe, the
+OOS result will show it. See `src/orb/optimize.py` and findings in `docs/RESULTS.md`.
 
 ## Phase status
 - [x] **Phase 1 — Discovery:** spec, precise ORB rules, scaffold, CI.

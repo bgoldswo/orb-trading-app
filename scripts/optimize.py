@@ -35,6 +35,8 @@ def _args(argv):
     p.add_argument("--oos-days", type=int, default=90, help="Out-of-sample window length (days).")
     p.add_argument("--objective", choices=OBJECTIVES, default="avg_r")
     p.add_argument("--min-trades", type=int, default=10, help="Min IS trades for a combo to qualify.")
+    p.add_argument("--workers", type=int, default=None,
+                   help="Parallel processes for the in-sample search (default: auto = cores).")
     return p.parse_args(argv)
 
 
@@ -58,7 +60,7 @@ def main(argv=None) -> int:
 
     result = walk_forward(
         bars, cfg, is_days=a.is_days, oos_days=a.oos_days,
-        objective=a.objective, min_trades=a.min_trades,
+        objective=a.objective, min_trades=a.min_trades, workers=a.workers,
     )
     if not result.folds:
         print("Not enough data for a single IS+OOS fold. Widen the date range or shorten the windows.")

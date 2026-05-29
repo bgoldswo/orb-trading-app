@@ -95,3 +95,33 @@ This is exactly why we built it walk-forward: a naive grid search would have
 reported the +0.035 in-sample figure and called it a winner. The honest answer is
 the opposite. To actually find an edge, change the **universe** (e.g. volatile
 single names), not the parameter search on these ETFs.
+
+---
+
+## Phase 4.5 — walk-forward on volatile single names (NVDA + TSLA + AMD)
+
+Testing the hypothesis that ORB's momentum premise works better on high-volatility
+single names than on ETFs.
+
+- **Date run:** 2026-05-29 · **Window:** 2024-05-29 → 2026-05-28 · IS=365d / OOS=90d
+- **Data:** Alpaca free IEX, 1-min · same 96-combo space, objective Avg R, min 10 IS trades
+- **Reproduce:** `python scripts/optimize.py NVDA TSLA AMD --is-days 365 --oos-days 90`
+
+**Stitched out-of-sample:** 583 trades, win 39.6%, **return −34.9%**, maxDD 35.7%,
+Sharpe −1.20, avg R −0.065, PF 0.86.
+
+**Overfitting check (avg R):** IS mean **+0.014** vs OOS mean **−0.194**
+(gap **+0.208** — a *larger* collapse than the ETFs).
+
+### Conclusion
+The hypothesis did not hold: walk-forward on volatile single names is **worse**, not
+better, and the in-sample-to-out-of-sample degradation is bigger. Across every test
+run so far — vanilla ORB, filtered ORB, bot-optimized ETFs, and bot-optimized single
+names — **no configuration shows a robust out-of-sample edge** once costs are honest.
+Caveat: the free IEX feed is thin (especially for single names), which can over-trigger
+intraday stops; the *magnitude* may differ on SIP data, but the *direction* (no robust
+edge) has been consistent across four independent tests.
+
+> Methodology note: the optimizer now parallelizes the per-fold in-sample search
+> across CPU cores (`--workers`, default auto), verified to produce identical
+> results to the serial path.
